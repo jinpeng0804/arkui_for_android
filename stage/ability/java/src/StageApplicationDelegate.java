@@ -45,7 +45,9 @@ import java.io.FileReader;
 import java.io.FileWriter;
 import java.io.FileOutputStream;
 import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -59,6 +61,7 @@ import ohos.ace.adapter.AppModeConfig;
 import ohos.ace.adapter.LoggerAosp;
 import ohos.ace.adapter.ILogger;
 
+import org.json.JSONException;
 import org.json.JSONObject;
 
 /**
@@ -103,6 +106,8 @@ public class StageApplicationDelegate {
 
     private static final String CACERT_FILE = "/cacert.ca";
 
+    private static final String ARKUIX_JSON = "arkui-x.json";
+
     private static final int ERR_INVALID_PARAMETERS = -1;
 
     private static final int ERR_OK = 0;
@@ -142,8 +147,10 @@ public class StageApplicationDelegate {
 
     /**
      * Dynamic load sandbox lib
+     *
+     * @return load library is success
      */
-    public void loadLibraryFromAppData() {
+    public boolean loadLibraryFromAppData() {
         try {
             String str = stageApplication.getApplicationContext().getApplicationInfo().nativeLibraryDir;
             String architecture = str.substring(str.lastIndexOf('/') + 1);
@@ -159,8 +166,10 @@ public class StageApplicationDelegate {
                             + architecture + ARKUIX_LIB_NAME;
             Log.i(LOG_TAG, "Dynamically loading path : " + path);
             System.load(path);
+            return true;
         } catch (UnsatisfiedLinkError error) {
             ALog.e(LOG_TAG, "System.load failed " + error.getMessage());
+            return false;
         }
     }
 
@@ -179,8 +188,15 @@ public class StageApplicationDelegate {
         stageApplication = application;
 
         ALog.setLogger(new LoggerAosp());
-        if (!AceEnv.getInstance().isLibraryLoaded()) {
-            loadLibraryFromAppData();
+        boolean isDynamic = isDynamicUpdateLibs();
+        if (isDynamic) {
+            if (!loadLibraryFromAppData()) {
+                AceEnv.getInstance().isLibraryLoaded();
+            }
+        } else {
+            if (!AceEnv.getInstance().isLibraryLoaded()) {
+                loadLibraryFromAppData();
+            }
         }
         Trace.beginSection("initApplication");
         AppModeConfig.initAppMode();
@@ -191,6 +207,7 @@ public class StageApplicationDelegate {
         setPidAndUid(Process.myPid(), getUid(context));
 
         Trace.beginSection("prepareAssets");
+        setIsDynamicLoadLibs(isDynamic);
         String apkPath = context.getPackageCodePath();
         setHapPath(apkPath);
         setNativeAssetManager(stageApplication.getAssets());
@@ -645,6 +662,15 @@ public class StageApplicationDelegate {
     }
 
     /**
+     * Set is dynamic to native.
+     *
+     * @param isDynamic the is dynamic.
+     */
+    public void setIsDynamicLoadLibs(boolean isDynamic) {
+        nativeSetIsDynamicLoadLibs(isDynamic);
+    }
+
+    /**
      * Set asset manager object to native.
      *
      * @param assetManager the asset manager.
@@ -887,7 +913,120 @@ public class StageApplicationDelegate {
         }
     }
 
+    private boolean isDynamicUpdateLibs() {
+        String jsonPath = extractJsonPathsFromAssets();
+
+        if (!jsonPath.isEmpty()) {
+            String assetsJsonContent = readAssetsFile(jsonPath);
+            String sandBoxJsonContent = readJsonFile(
+                    stageApplication.getApplicationContext().getFilesDir().getPath() + "/" + jsonPath);
+
+            if (assetsJsonContent == null || sandBoxJsonContent == null) {
+                Log.e(LOG_TAG, "File JsonContent is null");
+                return false;
+            }
+
+            String assetsVersion = extractVersionFromJson(assetsJsonContent);
+            String sandBoxVersion = extractVersionFromJson(sandBoxJsonContent);
+
+            if (!assetsVersion.isEmpty() && !sandBoxVersion.isEmpty()) {
+                return compareVersion(assetsVersion, sandBoxVersion);
+            }
+        }
+        return false;
+    }
+
+    private boolean compareVersion(String assetsVersion, String sandBoxVersion) {
+        String[] assetsCode = assetsVersion.split("\\.");
+        String[] sandBoxCode = sandBoxVersion.split("\\.");
+
+        int minLength = Math.min(assetsCode.length, sandBoxCode.length);
+
+        for (int i = 0; i < minLength; i++) {
+            try {
+                int assetsCodeValue = Integer.parseInt(assetsCode[i]);
+                int sandBoxCodeValue = Integer.parseInt(sandBoxCode[i]);
+
+                if (assetsCodeValue < sandBoxCodeValue) {
+                    return true;
+                } else if (assetsCodeValue > sandBoxCodeValue) {
+                    return false;
+                }
+            } catch (NumberFormatException e) {
+                Log.e(LOG_TAG, "Error NumberFormat : " + e.getMessage());
+                return false;
+            }
+        }
+        return assetsCode.length < sandBoxCode.length;
+    }
+
+    private String extractVersionFromJson(String jsonContent) {
+        if (jsonContent == null || jsonContent.isEmpty()) {
+            return "";
+        }
+        try {
+            JSONObject jsonObject = new JSONObject(jsonContent);
+            String version = jsonObject.optString("version", "");
+
+            if (!version.isEmpty()) {
+                return version;
+            }
+        } catch (JSONException e) {
+            Log.e(LOG_TAG, "Error JSON : " + e.getMessage());
+        }
+        return "";
+    }
+
+    private String extractJsonPathsFromAssets() {
+        String allPath = getAssetsPath(true);
+        if (allPath != null && !allPath.isEmpty()) {
+            String[] pathArray = allPath.split(";");
+            for (String path : pathArray) {
+                if (path.contains(ARKUIX_JSON)) {
+                    return path;
+                }
+            }
+        }
+        return "";
+    }
+
+    private String readAssetsFile(String path) {
+        try (InputStream inputStream = stageApplication.getAssets().open(path);
+             BufferedReader reader = new BufferedReader(new InputStreamReader(inputStream, StandardCharsets.UTF_8))) {
+            StringBuilder content = new StringBuilder();
+            String line;
+            while ((line = reader.readLine()) != null) {
+                content.append(line);
+            }
+            return content.toString();
+        } catch (IOException e) {
+            Log.e(LOG_TAG, "assets reading err: " + e.getMessage());
+        }
+        return null;
+    }
+
+    private String readJsonFile(String path) {
+        File file = new File(path);
+        if (!file.exists()) {
+            Log.e(LOG_TAG, "File does not exist: " + path);
+            return null;
+        }
+        try (BufferedReader reader = new BufferedReader(new FileReader(file))) {
+            StringBuilder content = new StringBuilder();
+            String line;
+            while ((line = reader.readLine()) != null) {
+                content.append(line);
+            }
+            return content.toString();
+        } catch (IOException e) {
+            Log.e(LOG_TAG, "reading err: " + e.getMessage());
+        }
+        return null;
+    }
+
     private native void nativeSetAssetManager(Object assetManager);
+
+    private native void nativeSetIsDynamicLoadLibs(boolean isDynamic);
 
     private native void nativeSetHapPath(String hapPath);
 
