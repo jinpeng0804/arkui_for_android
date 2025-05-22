@@ -353,6 +353,9 @@ public class AccessibilityCrossPlatformBridge extends AccessibilityNodeProvider 
 
         arkUiframeNodes.clear();
         arkUiAccFocusRouteNodes.clear();
+        if (arkuiRootAccessibilityView != null) {
+            arkuiRootAccessibilityView.removeCallbacks(updateNodeIds);
+        }
     }
 
     /**
