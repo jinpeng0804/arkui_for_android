@@ -477,6 +477,20 @@ public class StageFragment extends Fragment {
         Trace.endSection();
     }
 
+    /**
+     * Callback for the result from requesting permissions.
+     *
+     * @param requestCode  The request code passed in {@link #requestPermissions(String[], int)}.
+     * @param permissions  permissions The requested permissions. Never null.
+     * @param grantResults grantResults The grant results for the corresponding permissions.
+     */
+    public synchronized void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+        Log.i(LOG_TAG, "onRequestPermissionsResult");
+        Context context = getActivity().getApplicationContext();
+        GrantResult grantResultsClass = new GrantResult(context);
+        grantResultsClass.onRequestPremissionCallback(permissions, grantResults);
+    }
+
     private void initBridgeManager() {
         Trace.beginSection("StageFragment::initBridgeManager");
         if (bridgeManager == null) {
