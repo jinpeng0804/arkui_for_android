@@ -33,6 +33,7 @@ import android.os.Bundle;
 import android.os.Build;
 import android.os.Process;
 import android.os.Trace;
+import android.provider.Settings;
 import android.util.Log;
 import android.util.DisplayMetrics;
 import android.view.WindowManager;
@@ -126,6 +127,8 @@ public class StageApplicationDelegate {
 
     private static boolean isCopyNativeLibs = false;
 
+    private static boolean isCopyResources = false;
+
     private Application stageApplication = null;
 
     private volatile Activity topActivity = null;
@@ -181,7 +184,11 @@ public class StageApplicationDelegate {
     public void initApplication(Application application) {
         Log.i(LOG_TAG, "init application.");
         if (isInitialized) {
-            Log.i(LOG_TAG, "The application is initialized.");
+            if (!isCopyResources) {
+                Log.i(LOG_TAG, "The application is initialized, but copy resource failed.");
+                stageApplication = application;
+                copyAllModuleResources();
+            }
             return;
         }
         isInitialized = true;
@@ -422,6 +429,8 @@ public class StageApplicationDelegate {
             return;
         }
 
+        isCopyResources = true;
+
         int oldVersionCode = sharedPreferences.getInt(APP_VERSION_CODE, DEFAULT_VERSION_CODE);
         boolean isDebug = isApkInDebug(stageApplication);
         Log.i(LOG_TAG, "Old version code is: " + oldVersionCode +
@@ -455,7 +464,13 @@ public class StageApplicationDelegate {
             }
         } catch (IOException e) {
             Log.e(LOG_TAG, "read resources err: " + e.getMessage());
+            isCopyResources = false;
         }
+
+        if (moduleResources.isEmpty()) {
+            Log.e(LOG_TAG, "The moduleResources is empty.");
+        }
+
         for (String resourcesName : moduleResources) {
             copyFilesFromAssets(ASSETS_SUB_PATH + "/" + resourcesName,
                     stageApplication.getApplicationContext().getFilesDir().getPath() +
@@ -467,8 +482,10 @@ public class StageApplicationDelegate {
             Log.e(LOG_TAG, "edit is null");
             return;
         }
-        edit.putInt(APP_VERSION_CODE, versionCode);
-        edit.commit();
+        if (isCopyResources) {
+            edit.putInt(APP_VERSION_CODE, versionCode);
+            edit.commit();
+        }
     }
 
     /**
@@ -502,6 +519,7 @@ public class StageApplicationDelegate {
             }
         } catch (IOException e) {
             Log.e(LOG_TAG, "read or write data err: " + e.getMessage());
+            isCopyResources = false;
         } finally {
             if (is != null) {
                 try {
@@ -522,7 +540,10 @@ public class StageApplicationDelegate {
 
     private void initConfiguration() {
         Log.i(LOG_TAG, "StageApplication initConfiguration called");
+        float fontScale = Settings.System.getFloat(stageApplication.getContentResolver(), Settings.System.FONT_SCALE,
+            1.0f);
         Configuration cfg = stageApplication.getResources().getConfiguration();
+        cfg.fontScale = fontScale;
         double diagonalSize = getDeviceTypeByPhysicalSize();
         JSONObject json = StageConfiguration.convertConfiguration(cfg, diagonalSize);
         nativeInitConfiguration(json.toString());

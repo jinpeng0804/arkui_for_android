@@ -87,6 +87,7 @@ float SystemProperties::dragStartDampingRatio_ = 0.2f;
 float SystemProperties::dragStartPanDisThreshold_ = 10.0f;
 bool SystemProperties::accessTraceEnable_ = true;
 uint32_t SystemProperties::canvasDebugMode_ = 0;
+float SystemProperties::fontScale_ = 1.0f;
 
 std::pair<float, float> SystemProperties::brightUpPercent_ = {};
 
@@ -95,6 +96,11 @@ bool SystemProperties::taskPriorityAdjustmentEnable_ = false;
 int32_t SystemProperties::dragDropFrameworkStatus_ = 0;
 
 bool SystemProperties::pageTransitionFrzEnabled_ = false;
+
+ACE_WEAK_SYM float SystemProperties::GetFontScale()
+{
+    return fontScale_;
+}
 
 bool SystemProperties::IsOpIncEnable()
 {
@@ -173,6 +179,11 @@ bool SystemProperties::GetLayoutDetectEnabled()
 }
 
 bool SystemProperties::IsSyscapExist(const char* cap)
+{
+    return false;
+}
+
+bool SystemProperties::IsApiVersionGreaterOrEqual(int majorVersion, int minorVersion, int patchVersion)
 {
     return false;
 }
@@ -350,5 +361,15 @@ bool SystemProperties::GetContainerDeleteFlag()
 bool SystemProperties::IsPageTransitionFreeze()
 {
     return pageTransitionFrzEnabled_;
+}
+
+bool SystemProperties::GetMultiInstanceEnabled()
+{
+    return false;
+}
+
+bool SystemProperties::ConfigChangePerform()
+{
+    return false;
 }
 } // namespace OHOS::Ace
